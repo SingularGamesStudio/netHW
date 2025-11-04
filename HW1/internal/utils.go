@@ -60,7 +60,7 @@ func chat(ctx context.Context, fd int) {
 		cancel()
 	}()
 
-	<-ctx.Done()
+	<-ctx1.Done()
 }
 
 func ipToSocketAddress(addr string) (*syscall.SockaddrInet4, error) {
