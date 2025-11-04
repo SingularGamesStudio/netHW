@@ -4,7 +4,9 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -13,27 +15,25 @@ import (
 	"syscall"
 )
 
-func chat(fd int) {
-	ctx, cancel := context.WithCancel(context.Background())
+const bufSize = 100000
 
+func chat(ctx context.Context, fd int) {
+	ctx1, cancel := context.WithCancel(ctx)
 	go func() {
-		buf := make([]byte, 100000)
 		for {
-			cnt, err := syscall.Read(fd, buf)
-			if cnt > 0 {
-				if string(buf[:cnt]) == "DISCONNECT\n" {
-					fmt.Println("DISCONNECT received")
-					break
-				}
-				fmt.Print("message: ", string(buf[:cnt]))
+			msg, err := readLine(fd)
+			if msg == "DISCONNECT\n" {
+				fmt.Println("DISCONNECT received")
+				break
 			}
 			if err != nil {
 				fmt.Println("Error: ", err)
 				break
 			}
-			if ctx.Err() != nil {
+			if ctx1.Err() != nil {
 				break
 			}
+			fmt.Printf("message: %q\n", msg)
 		}
 		cancel()
 	}()
@@ -50,7 +50,7 @@ func chat(fd int) {
 				fmt.Println("Error: ", err)
 				break
 			}
-			if ctx.Err() != nil {
+			if ctx1.Err() != nil {
 				break
 			}
 			if line == "DISCONNECT\n" {
@@ -84,4 +84,29 @@ func write(fd int, data string) error {
 		b = b[cnt:]
 	}
 	return nil
+}
+
+func readLine(fd int) (string, error) {
+	buf := make([]byte, bufSize)
+	var lineBuf bytes.Buffer
+
+	for {
+		n, err := syscall.Read(fd, buf)
+		if err != nil {
+			return "", err
+		}
+		if n == 0 {
+			if lineBuf.Len() == 0 {
+				return "", errors.New("connection closed")
+			}
+			return lineBuf.String(), nil
+		}
+
+		i := bytes.IndexByte(buf[:n], '\n')
+		if i >= 0 {
+			lineBuf.Write(buf[:i+1])
+			return lineBuf.String(), nil
+		}
+		lineBuf.Write(buf[:n])
+	}
 }
