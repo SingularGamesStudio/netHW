@@ -13,7 +13,6 @@ import (
 	netfilter "github.com/AkihiroSuda/go-netfilter-queue"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/miekg/dns"
 )
 
 const (
@@ -36,7 +35,7 @@ type Config struct {
 }
 
 func main() {
-	rulesPath := flag.String("rules", "rules.json", "path to rules.json")
+	rulesPath := flag.String("rules", "rules.json", "rules.json path")
 	flag.Parse()
 
 	cfg, err := loadConfig(*rulesPath)
@@ -54,8 +53,10 @@ func main() {
 	packets := nfq.GetPackets()
 	for p := range packets {
 		if checkPacket(cfg, p.Packet) {
+			fmt.Println("packet accepted")
 			p.SetVerdict(netfilter.NF_ACCEPT)
 		} else {
+			fmt.Println("packet blocked")
 			p.SetVerdict(netfilter.NF_DROP)
 		}
 	}
@@ -81,19 +82,14 @@ func loadConfig(path string) (*Config, error) {
 
 type parsedDNS struct {
 	transport string
-	msg       dns.Msg
 	name      string
 	isQuery   bool
 	opcode    int
 	rcode     int
 }
 
-func checkPacket(cfg *Config, pkt []byte) bool {
-	proto, payload, err := parse(pkt)
-	if err != nil || proto == "" {
-		return cfg.DefaultAction == accept
-	}
-	p := parseDNS(proto, payload)
+func checkPacket(cfg *Config, pkt gopacket.Packet) bool {
+	p := parseDNSPacket(pkt)
 	if p == nil { // not dns
 		return cfg.DefaultAction == accept
 	}
@@ -105,30 +101,20 @@ func checkPacket(cfg *Config, pkt []byte) bool {
 	return cfg.DefaultAction == accept
 }
 
-func parse(packet []byte) (string, []byte, error) {
-	if len(packet) < 1 {
-		return "", nil, fmt.Errorf("packet too short")
-	}
-	ver := packet[0] >> 4
-	switch ver {
-	case 4:
-		return parseLayer(layers.LayerTypeIPv4, packet)
-	case 6:
-		return parseLayer(layers.LayerTypeIPv6, packet)
-	default:
-		return "", nil, fmt.Errorf("ip not v4 nor v6")
-	}
-}
-
-func parseLayer(proto gopacket.LayerType, packetData []byte) (string, []byte, error) {
-	packet := gopacket.NewPacket(packetData, proto, gopacket.NoCopy)
+func parseDNSPacket(packet gopacket.Packet) *parsedDNS {
+	var transport string
+	var payload []byte
 	if l := packet.Layer(layers.LayerTypeUDP); l != nil {
-		return "udp", l.(*layers.UDP).Payload, nil
+		transport = "udp"
+		payload = l.(*layers.UDP).Payload
+	} else if l := packet.Layer(layers.LayerTypeTCP); l != nil {
+		transport = "tcp"
+		payload = l.(*layers.TCP).Payload
+	} else {
+		return nil
 	}
-	if l := packet.Layer(layers.LayerTypeTCP); l != nil {
-		return "tcp", l.(*layers.TCP).Payload, nil
-	}
-	return "", nil, fmt.Errorf("not udp or tcp")
+
+	return parseDNS(transport, payload)
 }
 
 func parseDNS(transport string, payload []byte) *parsedDNS {
@@ -158,7 +144,7 @@ func parseDNS(transport string, payload []byte) *parsedDNS {
 	}
 
 	if len(d.Questions) > 0 {
-		p.name = string(d.Questions[0].Name)
+		p.name = strings.ToLower(strings.TrimSuffix(string(d.Questions[0].Name), "."))
 	}
 
 	return &p
