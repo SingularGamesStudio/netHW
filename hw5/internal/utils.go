@@ -1,25 +1,20 @@
-//go:build linux
-
 package internal
 
 import (
 	"bufio"
 	"context"
 	"fmt"
-	"net"
+	"io"
 	"os"
-	"strconv"
-	"strings"
-	"syscall"
 )
 
-func chat(fd int) {
+func chat(conn io.ReadWriter) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		buf := make([]byte, 100000)
 		for {
-			cnt, err := syscall.Read(fd, buf)
+			cnt, err := conn.Read(buf)
 			if cnt > 0 {
 				if string(buf[:cnt]) == "DISCONNECT\n" {
 					fmt.Println("DISCONNECT received")
@@ -45,7 +40,7 @@ func chat(fd int) {
 				fmt.Println("Error: ", err)
 				break
 			}
-			err = write(fd, line)
+			err = write(conn, line)
 			if err != nil {
 				fmt.Println("Error: ", err)
 				break
@@ -63,21 +58,10 @@ func chat(fd int) {
 	<-ctx.Done()
 }
 
-func ipToSocketAddress(addr string) (*syscall.SockaddrInet4, error) {
-	ip := net.ParseIP(strings.Split(addr, ":")[0])
-	port, err := strconv.Atoi(strings.Split(addr, ":")[1])
-	if err != nil {
-		return nil, err
-	}
-	return &syscall.SockaddrInet4{
-		Addr: [4]byte(ip.To4()),
-		Port: port,
-	}, nil
-}
-func write(fd int, data string) error {
+func write(conn io.Writer, data string) error {
 	b := []byte(data)
 	for len(b) > 0 {
-		cnt, err := syscall.Write(fd, b)
+		cnt, err := conn.Write(b)
 		if err != nil {
 			return err
 		}
