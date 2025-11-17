@@ -3,11 +3,12 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"syscall"
 )
 
-func UDPClient(ip string) error {
+func UDPClient(ctx context.Context, ip string) error {
 	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_UDP)
 	if err != nil {
 		return err
@@ -27,11 +28,11 @@ func UDPClient(ip string) error {
 		_ = write(fd, "DISCONNECT\n")
 	}()
 
-	chat(fd)
+	chat(ctx, fd)
 	return nil
 }
 
-func UDPServer(ip string) error {
+func UDPServer(ctx context.Context, ip string) error {
 	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_UDP)
 	if err != nil {
 		return err
@@ -70,7 +71,9 @@ func UDPServer(ip string) error {
 		}
 		fmt.Println("Connected to client")
 
-		chat(fd)
+		chat(ctx, fd)
 		fmt.Println("Client disconnected")
 	}
 }
+
+// go run ./... -protocol=udp -role=server -ip=192.168.0.1:7777

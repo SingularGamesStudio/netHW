@@ -3,11 +3,12 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"syscall"
 )
 
-func TCPClient(ip string) error {
+func TCPClient(ctx context.Context, ip string) error {
 	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_TCP)
 	if err != nil {
 		return err
@@ -25,11 +26,11 @@ func TCPClient(ip string) error {
 	defer syscall.Shutdown(fd, syscall.SHUT_RDWR)
 	fmt.Printf("Connected to %s\n", ip)
 
-	chat(fd)
+	chat(ctx, fd)
 	return nil
 }
 
-func TCPServer(ip string) error {
+func TCPServer(ctx context.Context, ip string) error {
 	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_TCP)
 	if err != nil {
 		return err
@@ -60,7 +61,7 @@ func TCPServer(ip string) error {
 		}
 		fmt.Println("Connected to client")
 
-		chat(clientFD)
+		chat(ctx, clientFD)
 
 		// close connection to interrupt the other goroutine
 		syscall.Shutdown(clientFD, syscall.SHUT_RDWR)
