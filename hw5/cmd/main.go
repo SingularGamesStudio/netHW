@@ -1,5 +1,3 @@
-//go:build linux
-
 package main
 
 import (
@@ -14,6 +12,8 @@ import (
 func main() {
 	role := flag.String("role", "", "")
 	ip := flag.String("ip", "", "")
+	cert := flag.String("cert", "", "")
+	key := flag.String("key", "", "")
 	flag.Parse()
 
 	sigc := make(chan os.Signal, 1)
@@ -26,9 +26,9 @@ func main() {
 	var err error
 	switch strings.ToLower(*role) {
 	case "client":
-		err = internal.TCPClient(*ip)
+		err = internal.TCPClient(*ip, *cert, *key)
 	case "server":
-		err = internal.TCPServer(*ip)
+		err = internal.TCPServer(*ip, *cert, *key)
 	default:
 		panic("role is neither client nor server")
 	}
