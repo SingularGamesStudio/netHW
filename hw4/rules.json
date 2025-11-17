@@ -1,0 +1,38 @@
+{
+    "default_action": "accept",
+    "rules": [
+        {
+            "action": "drop",
+            "transport": "udp",
+            "direction": "query",
+            "name": [
+                "bad.test",
+                "block.me"
+            ],
+            "opcode": [
+                0
+            ]
+        },
+        {
+            "action": "drop",
+            "direction": "response",
+            "name": [
+                "bad.test"
+            ],
+            "rcode": [
+                3
+            ]
+        },
+        {
+            "action": "accept",
+            "transport": "tcp",
+            "direction": "query",
+            "name": [
+                "allow.tcp.test"
+            ],
+            "opcode": [
+                0
+            ]
+        }
+    ]
+}
