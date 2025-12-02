@@ -1,70 +1,91 @@
-//go:build linux
-
 package internal
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
-	"syscall"
+	"net"
+	"os"
 )
 
-func TCPClient(ip string) error {
-	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_TCP)
-	if err != nil {
-		return err
-	}
-	defer syscall.Close(fd)
-
-	socketAddr, err := ipToSocketAddress(ip)
-	if err != nil {
-		return err
-	}
-	err = syscall.Connect(fd, socketAddr)
-	if err != nil {
-		return err
-	}
-	defer syscall.Shutdown(fd, syscall.SHUT_RDWR)
-	fmt.Printf("Connected to %s\n", ip)
-
-	chat(fd)
-	return nil
-}
-
-func TCPServer(ip string) error {
-	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_TCP)
-	if err != nil {
-		return err
-	}
-	defer syscall.Close(fd)
-
-	_ = syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-
-	socketAddr, err := ipToSocketAddress(ip)
-	if err != nil {
-		return err
-	}
-	err = syscall.Bind(fd, socketAddr)
-	if err != nil {
-		return err
-	}
-	defer syscall.Shutdown(fd, syscall.SHUT_RDWR)
-
-	if err := syscall.Listen(fd, 1); err != nil {
-		return err
-	}
-
-	for {
-		fmt.Printf("Awaiting client at %s\n", ip)
-		clientFD, _, err := syscall.Accept(fd)
+func TCPClient(ip, rootCertFile string) error {
+	tlsCfg := &tls.Config{}
+	if path := os.Getenv("SSLKEYLOGFILE"); path != "" {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 		if err != nil {
 			return err
 		}
-		fmt.Println("Connected to client")
+		defer f.Close()
+		tlsCfg.KeyLogWriter = f
+	}
 
-		chat(clientFD)
+	// the server cert is self-signed, so we just pass it as trusted
+	if rootCertFile != "" {
+		rootCert, err := os.ReadFile(rootCertFile)
+		if err != nil {
+			return err
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(rootCert) {
+			return fmt.Errorf("failed to parse cert")
+		}
+		tlsCfg.RootCAs = pool
+		tlsCfg.ServerName = "localhost"
+	} else {
+		tlsCfg.InsecureSkipVerify = true
+	}
+
+	conn, err := net.Dial("tcp", ip)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	tlsConn := tls.Client(conn, tlsCfg)
+	defer tlsConn.Close()
+
+	if err := tlsConn.Handshake(); err != nil {
+		return err
+	}
+	fmt.Printf("Connected to %s\n", ip)
+
+	chat(tlsConn)
+	return nil
+}
+
+func TCPServer(ip, certFile, keyFile string) error {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	server, err := net.Listen("tcp", ip)
+	if err != nil {
+		return err
+	}
+	defer server.Close()
+
+	for {
+		fmt.Printf("Awaiting client at %s\n", ip)
+		conn, err := server.Accept()
+		if err != nil {
+			return err
+		}
+		tlsConn := tls.Server(conn, tlsCfg)
+		err = tlsConn.Handshake()
+		if err != nil {
+			fmt.Println("TLS handshake failed:", err)
+		} else {
+			fmt.Println("Connected to client")
+
+			chat(tlsConn)
+		}
 
 		// close connection to interrupt the other goroutine
-		syscall.Shutdown(clientFD, syscall.SHUT_RDWR)
-		syscall.Close(clientFD)
+		tlsConn.Close()
 
 		fmt.Println("Client disconnected")
 	}
