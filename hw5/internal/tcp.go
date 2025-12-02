@@ -2,25 +2,37 @@ package internal
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
 )
 
-func TCPClient(ip, certFile, keyFile string) error {
-	path := os.Getenv("SSLKEYLOGFILE")
-	if path == "" {
-		return fmt.Errorf("No SSLKEYLOGFILE env var")
+func TCPClient(ip, rootCertFile string) error {
+	tlsCfg := &tls.Config{}
+	if path := os.Getenv("SSLKEYLOGFILE"); path != "" {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		tlsCfg.KeyLogWriter = f
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 
-	tlsCfg := &tls.Config{
-		InsecureSkipVerify: true,
-		KeyLogWriter:       f,
+	// the server cert is self-signed, so we just pass it as trusted
+	if rootCertFile != "" {
+		rootCert, err := os.ReadFile(rootCertFile)
+		if err != nil {
+			return err
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(rootCert) {
+			return fmt.Errorf("failed to parse cert")
+		}
+		tlsCfg.RootCAs = pool
+		tlsCfg.ServerName = "localhost"
+	} else {
+		tlsCfg.InsecureSkipVerify = true
 	}
 
 	conn, err := net.Dial("tcp", ip)

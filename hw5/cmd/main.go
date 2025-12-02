@@ -26,7 +26,11 @@ func main() {
 	var err error
 	switch strings.ToLower(*role) {
 	case "client":
-		err = internal.TCPClient(*ip, *cert, *key)
+		trusted := ""
+		if cert != nil {
+			trusted = *cert
+		}
+		err = internal.TCPClient(*ip, trusted)
 	case "server":
 		err = internal.TCPServer(*ip, *cert, *key)
 	default:
