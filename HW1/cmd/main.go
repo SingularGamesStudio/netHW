@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"netHW/internal"
 	"os"
@@ -17,11 +18,16 @@ func main() {
 	ip := flag.String("ip", "", "")
 	flag.Parse()
 
+	ctx, cancel := context.WithCancel(context.Background())
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigc
-		panic("graceful shutdown")
+		if strings.ToLower(*role) == "client" {
+			cancel()
+		} else {
+			panic("shutdown")
+		}
 	}()
 
 	var err error
@@ -29,18 +35,18 @@ func main() {
 	case "tcp":
 		switch strings.ToLower(*role) {
 		case "client":
-			err = internal.TCPClient(*ip)
+			err = internal.TCPClient(ctx, *ip)
 		case "server":
-			err = internal.TCPServer(*ip)
+			err = internal.TCPServer(ctx, *ip)
 		default:
 			panic("role is neither client nor server")
 		}
 	case "udp":
 		switch strings.ToLower(*role) {
 		case "client":
-			err = internal.UDPClient(*ip)
+			err = internal.UDPClient(ctx, *ip)
 		case "server":
-			err = internal.UDPServer(*ip)
+			err = internal.UDPServer(ctx, *ip)
 		default:
 			panic("role is neither client nor server")
 		}
